@@ -21,7 +21,9 @@ $ futhark repl
 > def lp : [6]i64 = [0,1,2,4,6,9]
 > def rp : [6]i64 = [11,8,3,5,7,10]
 > def data : [6]f64 = [1.1, 2.0, 3.0, 6.0, 0.5, 1.2]
-> def t : T.t i64 [6] = T.lprp {lp,rp,data}
-> def rs = T.irootfix (f64.+) f64.neg 0 t
-> def ls = T.ileaffix (f64.+) f64.neg 0 t
+> def t : T.t f64 [6] = T.lprp {lp,rp,data}
+> T.irootfix (f64.+) f64.neg 0 t
+[1.1, 3.1, 6.1, 9.1, 3.5999999999999996, 2.3]
+> T.ileaffix (f64.+) f64.neg 0 t
+[13.799999999999999, 11.5, 2.9999999999999996, 6.0, 0.5, 1.1999999999999993]
 ```
