@@ -3,6 +3,10 @@
 Data-parallel implementation of trees based on Euler-tours (Tarjan and Vishkin)
 and Blelloch's insights (see "Guy Blelloch. [Vector Models for Data-Parallel Computing](https://www.cs.cmu.edu/~guyb/papers/Ble90.pdf), MIT Press, 1990".
 
+## Interface
+
+See [vtree.fut](lib/github.com/diku-dk/vtree/vtree.fut).
+
 ## Installation
 
 ```
