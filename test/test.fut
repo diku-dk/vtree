@@ -20,8 +20,10 @@ entry test_lprp =
   let d = T.depth t
   let t2 = T.map (\i -> fs2[i]) t
   let rs = T.irootfix (f64.+) f64.neg 0 t2
-  let ls = T.leaffix (f64.+) f64.neg 0 t2
-  in all (\b->b) (map2 (==) d [0,1,1,2,1,1])
+  let ls = T.ileaffix (f64.+) f64.neg 0 t2
+  in all (\b->b) (map2 (==) d [0,1,1,2,1,1]) &&
+     all (\b->b) (map2 (==) rs [1.1, 3.1, 6.1, 9.1, 3.5999999999999996, 2.3]) &&
+     all (\b->b) (map2 (==) ls [13.799999999999999, 11.5, 2.9999999999999996, 6.0, 0.5, 1.1999999999999993])
 
 --==
 -- entry: test_lprp
