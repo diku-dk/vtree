@@ -14,10 +14,15 @@ import "../sorts/radix_sort"
 
 module type vtree = {
   type t 'a [n]
+  type~ ts 'a [k]
 
   val mk_preorder 'a [n] : [n]{parent: i64, data: a} -> t a [n]
 
   val mk_parent 'a [n] : [n]i64 -> [n]a -> t a [n]
+
+  val unmk 'a [n] : t a [n] -> {lp: [n]i64, rp: [n]i64, data: [n]a}
+
+  val mk_ts 'a [n] [k] : (subtrees: t a [n]) -> (shapes: [k]i64) -> ts a [k]
 
   -- preorder node numbering
   val lprp 'a [n] : {lp: [n]i64, rp: [n]i64, data: [n]a} -> t a [n]
@@ -55,17 +60,16 @@ module type vtree = {
   val split 'a [n] :
     t a [n]
     -> [n]bool
-    -> ( { subtrees: t a []
-         , subtrees_shape: []i64
-         }
-       , t a []
-       )
+    -> ?[k][m].( ts a [k]
+               , t a [m]
+               )
+
+  val get_t 'a [k] : i64 -> ts a [k] -> t a []
 
   val delete 'a [n] : t a [n] -> [n]bool -> t a []
-  val unmk 'a [n] : t a [n] -> {lp: [n]i64, rp: [n]i64, data: [n]a}
 
-  val merge 'a [n] [m] [k] :
-    ({subtrees: t a [n], subtrees_shape: [k]i64})
+  val merge 'a [m] [k] :
+    ts a [k]
     -> -- There are k subtrees, n vertices in total
     (parent_tree: t a [m])
     -> -- Parent has m vertices
@@ -79,6 +83,13 @@ module type vtree = {
 -- [mk_parent a] creates a vtree from the parent specification `a` of a tree
 -- where each node is specified with data and a parent pointer. It does not have
 -- to be a preorder.
+--
+-- [mk_ts subtrees shapes] creates a collection of trees by interpreting a
+-- single tree as a collection of subtrees, each of which has a shape given by
+-- `shapes`.
+--
+-- [unmk t] exposes the underlying representation of a vtree - this is intended
+-- solely for debugging of the library itself.
 --
 -- [lprp a] creates a vtree from a preorder specification `a` of a tree where
 -- the `lp` and `rp` arrays specify the indices of a left- and right-parenthesis
@@ -111,6 +122,17 @@ module type vtree = {
 --
 -- [depth t] returns, for each node `n`, the depth of the subtree rooted at `n`
 -- in `t`.
+--
+-- [split t flags] splits the tree into subtrees rooted at each node marked as
+-- true in the bool array. The subtrees must be disjoint, meaning no note marked
+-- as a new root may have another new root as ancestor. Returns a collection of
+-- hew trees as the type `ts`, as well as the residual tree.
+--
+-- [get_t i ts] extracts the `i`th subtree from a collection of trees.
+--
+-- [delete t flags] deletes those nodes marked as true.
+--
+-- [merge ts t ps] merges a collection of subtrees `ts`.
 
 module vtree : vtree = {
   -- A vtree is represented by its left-parenthesis array and its
@@ -118,6 +140,11 @@ module vtree : vtree = {
   type t 'a [n] = {lp: [n]i64, rp: [n]i64, data: [n]a}
 
   type t0 'a [n] = [n]{parent: i64, data: a}
+
+  type~ ts 'a [k] =
+    ?[n].{ subtrees: t a [n]
+         , subtrees_offsets: [k]i64
+         }
 
   -- A tree consists of n nodes (vertices, named 0..n-1) and n-1 edges. An edge
   -- p->x is uniquely identified by x (the node pointed to). There is no edge 0.
@@ -225,6 +252,9 @@ module vtree : vtree = {
     let rp = map (find_next (<=) min_tree) lp
     in {lp, rp, data}
 
+  def mk_ts 'a [n] [k] (subtrees: t a [n]) (shapes: [k]i64) : ts a [k] =
+    {subtrees, subtrees_offsets = exscan (+) 0 shapes}
+
   def lprp 'a [n] (x: t a [n]) : t a [n] = x
 
   def rootfix 'a [n] (op: a -> a -> a) (inv: a -> a) (ne: a) ({lp, rp, data}: t a [n]) : [n]a =
@@ -278,9 +308,7 @@ module vtree : vtree = {
 
   def split 'a [n]
             (t: t a [n])
-            (splits: [n]bool) : ( { subtrees: t a []
-                                  , subtrees_shape: []i64
-                                  }
+            (splits: [n]bool) : ( ts a []
                                 , t a []
                                 ) =
     -- Phase 1: Propagate subtree root lp to all descendants
@@ -307,15 +335,41 @@ module vtree : vtree = {
     let result_shape = pack splits subtrees_shape
     -- Phase 5: Build remainder
     let remainder = delete t is_rem
-    in ({subtrees, subtrees_shape = result_shape}, remainder)
+    in ( {subtrees, subtrees_offsets = exscan (+) 0 result_shape}
+       , remainder
+       )
+
+  def get_t 'a [k] (i: i64) (s: ts a [k]) : t a [] =
+    let o = s.subtrees_offsets[i]
+    let l =
+      if i + 1 < k
+      then s.subtrees_offsets[i + 1]
+      else length s.subtrees.data
+    in { lp = s.subtrees.lp[o:l]
+       , rp = s.subtrees.rp[o:l]
+       , data = s.subtrees.data[o:l]
+       }
+
+  def offsets_to_shapes [n] (total: i64) (xs: [n]i64) : [n]i64 =
+    map3 (\me next i ->
+            if i == n - 1
+            then total - me
+            else next - me)
+         xs
+         (rotate 1 xs)
+         (iota n)
 
   def merge 'a [n] [m] [k]
-            ({subtrees = subtrees: t a [n], subtrees_shape = subtrees_shape: [k]i64})
+            ({ subtrees = subtrees: t a [n]
+             , subtrees_offsets = subtrees_offsets: [k]i64
+             }
+            )
             -- There are k subtrees, n vertices in total
             (parent_tree: t a [m])
             -- Parent has m vertices
             (parent_pointers: [m]i64) : t a [] =
     -- Phase 1: Compute indices of parent nodes in the result
+    let subtrees_shape = offsets_to_shapes n subtrees_offsets
     let size_to_allocate_for_each_parent = map (\i -> if i < 0 then 0 else subtrees_shape[i]) parent_pointers
     let num_children_left_of_each_parent = exscan (+) 0 size_to_allocate_for_each_parent
     let distances_between_parents = map (+ 1) size_to_allocate_for_each_parent

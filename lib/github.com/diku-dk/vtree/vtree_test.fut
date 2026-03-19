@@ -30,18 +30,15 @@ entry test_split =
            , data = iota 6
            }
   let splits = [false, true, false, false, false, false]
-  let (subtree_res, remainder) = T.split t splits
-  let subtrees = T.unmk subtree_res.subtrees
+  let [k] (subtree_res: T.ts i64 [k], remainder) = T.split t splits
   -- Check subtrees
   let subtrees_ok =
-    length subtrees.data == 4
-    && and (map2 (==) (sized (4) subtrees.data) [1, 2, 3, 4])
-    && and (map2 (==) (sized (4) subtrees.lp) [0i64, 1, 3, 5])
-    && and (map2 (==) (sized (4) subtrees.rp) [7i64, 2, 4, 6])
-  -- Check shape
-  let shape_ok =
-    length subtree_res.subtrees_shape == 1
-    && and (map2 (==) (sized (1) subtree_res.subtrees_shape) [4i64])
+    k == 1
+    && let subtree = T.unmk (T.get_t 0 subtree_res)
+       in length subtree.data == 4
+          && and (map2 (==) (sized (4) subtree.data) [1, 2, 3, 4])
+          && and (map2 (==) (sized (4) subtree.lp) [0i64, 1, 3, 5])
+          && and (map2 (==) (sized (4) subtree.rp) [7i64, 2, 4, 6])
   -- Check remainder
   let rem = T.unmk remainder
   let remainder_ok =
@@ -49,7 +46,7 @@ entry test_split =
     && and (map2 (==) (sized (2) rem.data) [0, 5])
     && and (map2 (==) (sized (2) rem.lp) [0i64, 1])
     && and (map2 (==) (sized (2) rem.rp) [3i64, 2])
-  in subtrees_ok && shape_ok && remainder_ok
+  in subtrees_ok && remainder_ok
 
 entry test_split_at_leaf =
   let t: T.t i64 [6] =
@@ -60,7 +57,7 @@ entry test_split_at_leaf =
   -- Split at node 2 (a leaf under node 1)
   let splits = [false, false, true, false, false, false]
   let (subtree_res, remainder) = T.split t splits
-  let subtrees = T.unmk subtree_res.subtrees
+  let subtrees = T.unmk (T.get_t 0 subtree_res)
   let rem = T.unmk remainder
   -- Subtree should just be node 2
   let subtrees_ok =
@@ -79,19 +76,19 @@ entry test_split_multiple =
   -- Split at both node 1 and node 5 (siblings under root)
   let splits = [false, true, false, false, false, true]
   let (subtree_res, remainder) = T.split t splits
-  let subtrees = T.unmk subtree_res.subtrees
-  let rem = T.unmk remainder
+  let t0 = T.unmk (T.get_t 0 subtree_res)
+  let t1 = T.unmk (T.get_t 1 subtree_res)
   -- Subtrees should contain nodes 1,2,3,4 and node 5
-  let subtrees_ok = length subtrees.data == 5
-  -- shape should be [0, 1] for two subtrees
-  let shape_ok =
-    length subtree_res.subtrees_shape == 2
-    && and (map2 (==) (sized (2) subtree_res.subtrees_shape) [4i64, 1i64])
+  let t0_ok =
+    length t0.data == 4 && and (map2 (==) (sized 4 t0.data) [1, 2, 3, 4])
+  let t1_ok =
+    length t1.data == 1 && and (map2 (==) (sized 1 t1.data) [5])
   -- Remainder should only be root (node 0)
+  let rem = T.unmk remainder
   let remainder_ok =
     length rem.data == 1
     && and (map2 (==) (sized (1) rem.data) [0])
-  in subtrees_ok && shape_ok && remainder_ok
+  in t0_ok && t1_ok && remainder_ok
 
 entry test_split_none =
   let t: T.t i64 [6] =
@@ -100,15 +97,13 @@ entry test_split_none =
            , data = iota 6
            }
   let splits = [false, false, false, false, false, false]
-  let (subtree_res, remainder) = T.split t splits
-  let subtrees = T.unmk subtree_res.subtrees
+  let [k] (_: T.ts i64 [k], remainder) = T.split t splits
   let rem = T.unmk remainder
   -- No subtrees
-  let subtrees_ok = length subtrees.data == 0
-  let shape_ok = length subtree_res.subtrees_shape == 0
+  let subtrees_ok = k == 0
   -- All nodes in remainder
   let remainder_ok = length rem.data == 6
-  in subtrees_ok && shape_ok && remainder_ok
+  in subtrees_ok && remainder_ok
 
 entry test_delete_vertices =
   let t: T.t i64 [6] =
@@ -143,7 +138,7 @@ entry test_merge_tree =
     , rp = [21, 4, 3, 12, 11, 8, 10, 20, 17, 16, 19]
     , data = [0, 4, 5, 1, 6, 7, 8, 2, 4, 5, 3]
     }
-  let actual = T.unmk (T.merge {subtrees = subtrees, subtrees_shape = subtrees_shape} parent_tree parent_pointers)
+  let actual = T.unmk (T.merge (T.mk_ts subtrees subtrees_shape) parent_tree parent_pointers)
   let ok =
     length actual.data == 11
     && and (map2 (==) (sized (11) actual.lp) expected.lp)
@@ -165,7 +160,7 @@ entry test_merge_no_subtrees =
   let subtrees_shape = []
   let parent_pointers = [-1i64, -1i64, -1i64, -1i64]
   let expected = T.unmk parent_tree
-  let actual = T.unmk (T.merge {subtrees = subtrees, subtrees_shape = subtrees_shape} parent_tree parent_pointers)
+  let actual = T.unmk (T.merge (T.mk_ts subtrees subtrees_shape) parent_tree parent_pointers)
   let ok =
     length actual.data == 4
     && and (map2 (==) (sized (4) actual.lp) expected.lp)
