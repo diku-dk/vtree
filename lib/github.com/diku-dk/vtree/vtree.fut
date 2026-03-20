@@ -1,8 +1,15 @@
 -- | Data-parallel implementation of trees based on Euler-tours
 --
--- (Tarjan and Vishkin) and Blelloch's insights (see "Guy Blelloch. Vector
--- Models for Data-Parallel Computing, MIT Press, 1990"
--- (https://www.cs.cmu.edu/~guyb/papers/Ble90.pdf).
+-- The code is based on Tarjan, Vishkin, and Blelloch's insights (see [Vector
+-- Models for Data-Parallel
+-- Computing](https://www.cs.cmu.edu/~guyb/papers/Ble90.pdf)).
+--
+-- For all `Xfix` operations (i.e., rootfix, irootfixi leaffix, ileaffix), `f`
+-- is assumed to be associative, the value `ne` is supposed to be the neutral
+-- element for `f`, and `inv` is assumed to be the inverse associated with `f`
+-- such that if `c = f a b` then `a = f c (inv b)` and `b = f c (inv a)`. All
+-- `Xfix` operations has Work O(`m`) and Depth O(1), assuming `f` has constant
+-- work and depth complexities.
 --
 -- ## Acknowledgements
 --
@@ -13,50 +20,83 @@ import "../segmented/segmented"
 import "../sorts/radix_sort"
 
 module type vtree = {
+  -- | The type of v-trees with `n` nodes.
   type t 'a [n]
+
+  -- | A collection of `k` v-trees.
   type~ ts 'a [k]
 
+  -- | `mk_preorder a` creates a vtree from the preorder specification `a`
+  -- of a tree where each node is specified with data and a parent pointer (index
+  -- into the preorder of the nodes in the tree).
   val mk_preorder 'a [n] : [n]{parent: i64, data: a} -> t a [n]
 
+  -- | `mk_parent a` creates a vtree from the parent specification `a` of a tree
+  -- where each node is specified with data and a parent pointer. It does not have
+  -- to be a preorder.
   val mk_parent 'a [n] : [n]i64 -> [n]a -> t a [n]
 
+  -- | `unmk t` exposes the underlying representation of a vtree - this is intended
+  -- solely for debugging of the library itself.
   val unmk 'a [n] : t a [n] -> {lp: [n]i64, rp: [n]i64, data: [n]a}
 
+  -- | `mk_ts subtrees shapes` creates a collection of trees by interpreting a
+  -- single tree as a collection of subtrees, each of which has a shape given by
+  -- `shapes`.
   val mk_ts 'a [n] [k] : (subtrees: t a [n]) -> (shapes: [k]i64) -> ts a [k]
 
-  -- preorder node numbering
+  -- | `lprp a` creates a vtree from a preorder specification `a` of a tree where
+  -- the `lp` and `rp` arrays specify the indices of a left- and right-parenthesis
+  -- print of the tree.
   val lprp 'a [n] : {lp: [n]i64, rp: [n]i64, data: [n]a} -> t a [n]
 
-  -- preorder node numbering
-
+  -- | `map f t` maps a function `f` over the nodes in the tree.
   val map 'a 'b [n] : (a -> b) -> t a [n] -> t b [n]
 
+  -- | `rootfix f inv ne t` computes, for each node `n` in the tree with the path
+  -- `n0->n1->...->nm->n` from the root `n0` to `n`, the values `f n0 (f n1
+  -- (...nm...))` (i.e., excluding the data for node `n`).
   val rootfix 'a [n] :
     (op: a -> a -> a)
     -> (inv: a -> a)
     -> (ne: a)
     -> t a [n] -> [n]a
 
+  -- | `irootfix f inv ne t` computes, for each node `n` in the tree with the
+  -- path `n0->n2->...->n` from the root `n0` to `n`, the values `f n0 (f n1
+  -- (...n...))` (i.e., including the data for node `n`).
   val irootfix 'a [n] :
     (op: a -> a -> a)
     -> (inv: a -> a)
     -> (ne: a)
     -> t a [n] -> [n]a
 
+  -- | `leaffix f inv ne t` computes, for each node `n` in the tree with descendants
+  -- `[n1,n2,...,nm]` the accumulated value `f n1 (f n2 (...nm...))` (i.e.,
+  -- excluding the data for node `n`).
   val leaffix 'a [n] :
     (op: a -> a -> a)
     -> (inv: a -> a)
     -> (ne: a)
     -> t a [n] -> [n]a
 
+  -- | `ileaffixi f inv ne t` computes, for each node `n` in the tree with
+  -- descendants `[n1,n2,...,nm]` the accumulated value `f n (f n1 (f n2
+  -- (...nm...)))` (i.e., including the data for node `n`).
   val ileaffix 'a [n] :
     (op: a -> a -> a)
     -> (inv: a -> a)
     -> (ne: a)
     -> t a [n] -> [n]a
 
+  -- | `depth t` returns, for each node `n`, the depth of the subtree rooted at `n`
+  -- in `t`.
   val depth 'a [n] : t a [n] -> [n]i64
 
+  -- | `split t flags` splits the tree into subtrees rooted at each node marked as
+  -- true in the bool array. The subtrees must be disjoint, meaning no note marked
+  -- as a new root may have another new root as ancestor. Returns a collection of
+  -- hew trees as the type `ts`, as well as the residual tree.
   val split 'a [n] :
     t a [n]
     -> [n]bool
@@ -64,10 +104,13 @@ module type vtree = {
                , t a [m]
                )
 
+  -- | `get_t i ts` extracts the `i`th subtree from a collection of trees.
   val get_t 'a [k] : i64 -> ts a [k] -> t a []
 
+  -- | `delete t flags` deletes those nodes marked as true.
   val delete 'a [n] : t a [n] -> [n]bool -> t a []
 
+  -- | `merge ts t ps` merges a collection of subtrees `ts`.
   val merge 'a [m] [k] :
     ts a [k]
     -> -- There are k subtrees, n vertices in total
@@ -75,64 +118,6 @@ module type vtree = {
     -> -- Parent has m vertices
     (parent_pointers: [m]i64) -> t a []
 }
-
--- [mk_preorder a] creates a vtree from the preorder specification `a` of a tree
--- where each node is specified with data and a parent pointer (index into the
--- preorder of the nodes in the tree).
---
--- [mk_parent a] creates a vtree from the parent specification `a` of a tree
--- where each node is specified with data and a parent pointer. It does not have
--- to be a preorder.
---
--- [mk_ts subtrees shapes] creates a collection of trees by interpreting a
--- single tree as a collection of subtrees, each of which has a shape given by
--- `shapes`.
---
--- [unmk t] exposes the underlying representation of a vtree - this is intended
--- solely for debugging of the library itself.
---
--- [lprp a] creates a vtree from a preorder specification `a` of a tree where
--- the `lp` and `rp` arrays specify the indices of a left- and right-parenthesis
--- print of the tree.
---
--- [map f t] maps a function `f` over the nodes in the tree.
---
--- [rootfix f inv ne t] computes, for each node `n` in the tree with the path
--- `n0->n1->...->nm->n` from the root `n0` to `n`, the values `f n0 (f n1
--- (...nm...))` (i.e., excluding the data for node `n`).
---
--- [rootfixi f inv ne t] computes, for each node `n` in the tree with the path
--- `n0->n2->...->n` from the root `n0` to `n`, the values `f n0 (f n1
--- (...n...))` (i.e., including the data for node `n`).
---
--- [leaffix f inv ne t] computes, for each node `n` in the tree with descendants
--- `[n1,n2,...,nm]` the accumulated value `f n1 (f n2 (...nm...))` (i.e.,
--- excluding the data for node `n`).
---
--- [leaffixi f inv ne t] computes, for each node `n` in the tree with
--- descendants `[n1,n2,...,nm]` the accumulated value `f n (f n1 (f n2
--- (...nm...)))` (i.e., including the data for node `n`).
---
--- For all `Xfix` operations (i.e., rootfix, rootfixi, leaffix, leaffixi), `f`
--- is assumed to be associative, the value `ne` is supposed to be the neutral
--- element for `f`, and `inv` is assumed to be the inverse associated with `f`
--- such that if `c = f a b` then `a = f c (inv b)` and `b = f c (inv a)`. All
--- `Xfix` operations has Work O(`m`) and Depth O(1), assuming `f` has constant
--- work and depth complexities.
---
--- [depth t] returns, for each node `n`, the depth of the subtree rooted at `n`
--- in `t`.
---
--- [split t flags] splits the tree into subtrees rooted at each node marked as
--- true in the bool array. The subtrees must be disjoint, meaning no note marked
--- as a new root may have another new root as ancestor. Returns a collection of
--- hew trees as the type `ts`, as well as the residual tree.
---
--- [get_t i ts] extracts the `i`th subtree from a collection of trees.
---
--- [delete t flags] deletes those nodes marked as true.
---
--- [merge ts t ps] merges a collection of subtrees `ts`.
 
 module vtree : vtree = {
   -- A vtree is represented by its left-parenthesis array and its
