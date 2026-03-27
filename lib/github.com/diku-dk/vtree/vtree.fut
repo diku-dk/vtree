@@ -53,6 +53,11 @@ module type vtree = {
   -- | `map f t` maps a function `f` over the nodes in the tree.
   val map 'a 'b [n] : (a -> b) -> t a [n] -> t b [n]
 
+  -- | `adjoin t xs` pairs the nodes in the tree with the elements of an array,
+  -- such that the *i*th node of the tree in a preorder traversal is paired with
+  -- the *i*th array element.
+  val adjoin 'a 'b [n] : t a [n] -> [n]b -> t (a, b) [n]
+
   -- | `rootfix f inv ne t` computes, for each node `n` in the tree with the path
   -- `n0->n1->...->nm->n` from the root `n0` to `n`, the values `f n0 (f n1
   -- (...nm...))` (i.e., excluding the data for node `n`).
@@ -496,6 +501,9 @@ module vtree : vtree = {
 
   def map 'a 'b [n] (f: a -> b) ({lp, rp, data}: t a [n]) : t b [n] =
     {lp, rp, data = map f data}
+
+  def adjoin 'a 'b [n] ({lp, rp, data}: t a [n]) (xs: [n]b) : t (a, b) [n] =
+    {lp, rp, data = zip data xs}
 
   def depth 'a [n] (t: t a [n]) : [n]i64 =
     let t' = map (\_ -> 1) t
